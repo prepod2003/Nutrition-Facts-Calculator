@@ -133,7 +133,7 @@
             }
         };
 
-        const analyzeImageWithGemini = async (imageFile, apiKey) => {
+        const analyzeImageWithGemini = async (imageFile, userHint, apiKey) => {
             if (!apiKey) {
                 console.error("API Key is missing.");
                 return null;
@@ -149,9 +149,13 @@
                     },
                 };
                 
-                const textPart = {
-                    text: `Проанализируй это изображение блюда. Определи все ингредиенты. Для каждого ингредиента оцени его вес в граммах и предоставь КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. Ответ дай только в формате JSON в виде массива объектов. Каждый объект должен содержать поля: name (название на русском языке), weight (вес в граммах), и baseCPFC (объект с полями calories, protein, fat, carbohydrate, fiber на 100г).`
-                };
+                let promptText = `Проанализируй это изображение блюда. Определи все ингредиенты. Для каждого ингредиента оцени его вес в граммах и предоставь КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. При оценке веса будь внимателен к относительным размерам продуктов на фото (например, банан обычно тяжелее маленького яблока). Ответ дай только в формате JSON в виде массива объектов. Каждый объект должен содержать поля: name (название на русском языке), weight (вес в граммах), и baseCPFC (объект с полями calories, protein, fat, carbohydrate, fiber на 100г).`;
+
+                if (userHint && userHint.trim()) {
+                    promptText += `\n\nПользователь предоставил следующую подсказку для более точного распознавания: "${userHint.trim()}".`;
+                }
+
+                const textPart = { text: promptText };
 
                 const ingredientsSchema = {
                     type: Type.ARRAY,
@@ -197,6 +201,7 @@
         // --- Components ---
         const ImageAnalyzer = ({ onAnalysisComplete, apiKey }) => {
             const [image, setImage] = useState(null); // { file, previewUrl }
+            const [userHint, setUserHint] = useState('');
             const [isLoading, setIsLoading] = useState(false);
             const [error, setError] = useState(null);
             const fileInputRef = useRef(null);
@@ -221,14 +226,14 @@
 
                 setIsLoading(true);
                 setError(null);
-                const result = await analyzeImageWithGemini(image.file, apiKey);
+                const result = await analyzeImageWithGemini(image.file, userHint, apiKey);
                 setIsLoading(false);
 
-                if (result && result.length > 0) {
+                if (result && Array.isArray(result) && result.length > 0) {
                     onAnalysisComplete(result);
                     handleClear();
                 } else {
-                    setError("Не удалось распознать ингредиенты на фото. Попробуйте другое изображение.");
+                    setError("Не удалось распознать ингредиенты на фото. Попробуйте другое изображение или добавьте подсказку.");
                 }
             };
             
@@ -237,6 +242,7 @@
                     URL.revokeObjectURL(image.previewUrl);
                 }
                 setImage(null);
+                setUserHint('');
                 setError(null);
                 if (fileInputRef.current) {
                     fileInputRef.current.value = null;
@@ -249,7 +255,6 @@
                     <input
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         ref={fileInputRef}
                         onChange={handleImageChange}
                         className="hidden"
@@ -266,6 +271,13 @@
                             {image ? (
                                 <div className="space-y-2 animate-fade-in">
                                     <img src={image.previewUrl} alt="Превью блюда" className="w-full max-h-60 object-contain rounded-md border" />
+                                    <textarea
+                                        value={userHint}
+                                        onChange={(e) => setUserHint(e.target.value)}
+                                        placeholder="Добавьте подсказку (например, 'Борщ с говядиной')"
+                                        className="w-full p-2 text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 transition resize-none"
+                                        rows="2"
+                                    ></textarea>
                                     <div className="flex flex-col sm:flex-row gap-2">
                                         <button onClick={handleAnalyze} className="flex-1 bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition text-sm">
                                             Распознать
