@@ -121,7 +121,7 @@
         };
 
 
-        // --- Components 1---
+        // --- Components ---
 
         const IngredientSearch = ({ onAddIngredient, apiKey }) => {
             const [query, setQuery] = useState('');
@@ -168,12 +168,12 @@
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Например, куриная грудка"
-                            className="flex-1 min-w-0 p-2 text-xs sm:text-sm lg:text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                            className="flex-1 min-w-0 p-2 text-sm sm:text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                             disabled={isLoading}
                         />
                         <button 
                             type="submit" 
-                            className="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-8 sm:w-10 lg:w-12 flex-shrink-0"
+                            className="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-10 sm:w-12 flex-shrink-0"
                             disabled={isLoading || !query.trim()}
                         >
                             {isLoading ? <SpinnerIcon /> : <SearchIcon />}
@@ -222,7 +222,7 @@
         const NutritionLabel = ({label, value, unit, color}) => (
             <div className={`p-1.5 sm:p-2 lg:p-3 rounded-md text-center w-full ${color}`}>
                 <p className="text-xs sm:text-sm font-medium opacity-80 break-words">{label}</p>
-                <p className="text-sm sm:text-lg lg:text-xl font-bold break-words">{value.toFixed(1)} <span className="text-xs sm:text-sm font-normal">{unit}</span></p>
+                <p className="text-sm sm:text-base font-bold break-words">{value.toFixed(1)} <span className="text-xs font-normal">{unit}</span></p>
             </div>
         );
 
@@ -238,7 +238,7 @@
                             </button>
                         )}
                     </div>
-                    <div className="space-y-2 mb-2 sm:mb-3">
+                    <div className="space-y-2 mb-2 sm:mb-3 max-h-96 overflow-y-auto">
                         {ingredients.length === 0 ? (
                             <div className="text-center py-4 sm:py-6 lg:py-8 text-slate-500 bg-slate-50 rounded-lg text-xs sm:text-sm lg:text-base w-full">
                                 <p className="break-words px-2">Добавьте ингредиенты из поиска</p>
@@ -278,7 +278,7 @@
                     </div>
                     <div className="border-t pt-2 sm:pt-3 w-full">
                         <h3 className="text-sm sm:text-base lg:text-lg font-bold mb-2 break-words">Итого на блюдо:</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-2 lg:gap-3 w-full">
+                        <div className="grid grid-cols-2 gap-1 sm:gap-2 lg:gap-3 w-full">
                         <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
                         <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
                         <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
@@ -343,6 +343,7 @@
         const App = () => {
             const [apiKey, setApiKey] = useState(null);
             const [dishIngredients, setDishIngredients] = useState([]);
+            const [activeTab, setActiveTab] = useState('search'); // 'search' or 'dish'
 
             useEffect(() => {
                 const storedKey = localStorage.getItem('gemini-api-key');
@@ -363,6 +364,7 @@
                     }
                     return [...prevIngredients, { ...ingredient, weight: 100 }];
                 });
+                setActiveTab('dish'); // Switch to dish tab on mobile after adding
             };
 
             const handleUpdateIngredientWeight = (id, weight) => {
@@ -392,10 +394,23 @@
             
             const isReady = !!apiKey;
 
+            const TabButton = ({ isActive, onClick, children }) => (
+                <button
+                    onClick={onClick}
+                    className={`flex-1 py-2 px-1 text-sm font-medium text-center transition-colors ${
+                        isActive
+                            ? 'border-b-2 border-blue-600 text-blue-600'
+                            : 'border-b-2 border-transparent text-slate-500 hover:bg-slate-100'
+                    }`}
+                >
+                    {children}
+                </button>
+            );
+
             return (
                 <div className="min-h-screen bg-slate-100 text-slate-800 font-sans">
                     <ApiKeyManager apiKey={apiKey} setApiKey={setApiKey} />
-                    <header className="bg-white shadow-md w-full">
+                    <header className="bg-white shadow-md w-full sticky top-0 z-10">
                         <div className="responsive-container py-2">
                             <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-900 break-words">Калькулятор КБЖУ</h1>
                             <p className="text-slate-600 text-xs sm:text-sm hidden sm:block break-words">Создавайте блюда и рассчитывайте пищевую ценность</p>
@@ -403,20 +418,52 @@
                     </header>
                     
                     {isReady ? (
-                        <main className="w-full mt-1 animate-fade-in">
+                        <main className="w-full mt-1 animate-fade-in pb-4">
                             <div className="responsive-container">
-                                <div className="space-y-2 sm:space-y-3 lg:space-y-4">
-                                <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
-                                <DishBuilder 
-                                    ingredients={dishIngredients}
-                                    totals={memoizedTotals}
-                                    onUpdateWeight={handleUpdateIngredientWeight}
-                                    onRemove={handleRemoveIngredient}
-                                    onClear={handleClearDish}
-                                />
+                                {/* Mobile Tab Navigation */}
+                                <div className="lg:hidden bg-white rounded-md shadow-md mb-2 sm:mb-3">
+                                    <div className="flex justify-around">
+                                        <TabButton isActive={activeTab === 'search'} onClick={() => setActiveTab('search')}>
+                                            Поиск
+                                        </TabButton>
+                                        <TabButton isActive={activeTab === 'dish'} onClick={() => setActiveTab('dish')}>
+                                            <div className="flex items-center justify-center">
+                                                <span>Блюдо</span>
+                                                {dishIngredients.length > 0 && (
+                                                    <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                                                        {dishIngredients.length}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </TabButton>
+                                    </div>
+                                </div>
+
+                                {/* Content: Desktop Grid */}
+                                <div className="hidden lg:grid lg:grid-cols-2 lg:gap-4 lg:items-start">
+                                    <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
+                                    <DishBuilder 
+                                        ingredients={dishIngredients}
+                                        totals={memoizedTotals}
+                                        onUpdateWeight={handleUpdateIngredientWeight}
+                                        onRemove={handleRemoveIngredient}
+                                        onClear={handleClearDish}
+                                    />
+                                </div>
+                                
+                                {/* Content: Mobile Tabs */}
+                                <div className="block lg:hidden">
+                                    {activeTab === 'search' && <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />}
+                                    {activeTab === 'dish' && <DishBuilder 
+                                        ingredients={dishIngredients}
+                                        totals={memoizedTotals}
+                                        onUpdateWeight={handleUpdateIngredientWeight}
+                                        onRemove={handleRemoveIngredient}
+                                        onClear={handleClearDish}
+                                    />}
+                                </div>
                             </div>
-                        </div>
-                    </main>
+                        </main>
                     ) : (
                          <main className="w-full mt-2 text-center">
                             <div className="responsive-container">
