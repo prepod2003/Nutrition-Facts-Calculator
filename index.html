@@ -81,6 +81,12 @@
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
         );
+        const SaveIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6a1 1 0 10-2 0v5.586L7.707 10.293zM5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5z" />
+            </svg>
+        );
+
 
         // --- Gemini Service ---
         const fileToBase64 = (file) => new Promise((resolve, reject) => {
@@ -89,220 +95,170 @@
             reader.onload = () => resolve(reader.result.split(',')[1]);
             reader.onerror = error => reject(error);
         });
+        
+        const ingredientsSchema = {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    name: { type: Type.STRING },
+                    weight: { type: Type.NUMBER },
+                    baseCPFC: {
+                        type: Type.OBJECT,
+                        properties: {
+                            calories: { type: Type.NUMBER }, protein: { type: Type.NUMBER },
+                            fat: { type: Type.NUMBER }, carbohydrate: { type: Type.NUMBER },
+                            fiber: { type: Type.NUMBER }
+                        },
+                        required: ["calories", "protein", "fat", "carbohydrate", "fiber"]
+                    }
+                },
+                required: ["name", "weight", "baseCPFC"]
+            }
+        };
 
         const fetchIngredientData = async (ingredientName, apiKey) => {
-            if (!apiKey) {
-                console.error("API Key is missing.");
-                return null;
-            }
+            if (!apiKey) return null;
             try {
                 const ai = new GoogleGenAI({ apiKey });
                 const cpfcSchema = {
                     type: Type.OBJECT,
                     properties: {
-                        calories: { type: Type.NUMBER, description: "Количество калорий (ккал)" },
-                        protein: { type: Type.NUMBER, description: "Количество белков (г)" },
-                        fat: { type: Type.NUMBER, description: "Количество жиров (г)" },
-                        carbohydrate: { type: Type.NUMBER, description: "Количество углеводов (г)" },
-                        fiber: { type: Type.NUMBER, description: "Количество клетчатки (г)" }
+                        calories: { type: Type.NUMBER }, protein: { type: Type.NUMBER },
+                        fat: { type: Type.NUMBER }, carbohydrate: { type: Type.NUMBER },
+                        fiber: { type: Type.NUMBER }
                     },
                     required: ["calories", "protein", "fat", "carbohydrate", "fiber"]
                 };
-
                 const result = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: `Для продукта '${ingredientName}' предоставь точное КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. Ответ дай только в формате JSON.`,
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: cpfcSchema,
-                    }
+                    config: { responseMimeType: "application/json", responseSchema: cpfcSchema }
                 });
-
-                const jsonString = result.text.trim();
-                const data = JSON.parse(jsonString);
-
-                if (typeof data.calories === 'number' && typeof data.protein === 'number' && typeof data.fat === 'number' && typeof data.carbohydrate === 'number' && typeof data.fiber === 'number') {
-                    return data;
-                }
-
-                console.error("Parsed data does not match schema:", data);
+                const data = JSON.parse(result.text.trim());
+                if (typeof data.calories === 'number' && typeof data.protein === 'number') return data;
                 return null;
-            } catch (error) {
-                console.error(`Error fetching data for ${ingredientName}:`, error);
-                return null;
-            }
+            } catch (error) { console.error(`Error fetching data for ${ingredientName}:`, error); return null; }
+        };
+
+        const analyzeTextWithGemini = async (text, apiKey) => {
+            if (!apiKey || !text) return null;
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+                const prompt = `Проанализируй этот текст с описанием блюда: "${text}". Определи все ингредиенты. Для каждого ингредиента оцени его вес в граммах и предоставь КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. Ответ дай только в формате JSON в виде массива объектов. Важно: название каждого ингредиента в поле 'name' должно быть на русском языке.`;
+                const result = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt,
+                    config: { responseMimeType: "application/json", responseSchema: ingredientsSchema }
+                });
+                return JSON.parse(result.text.trim());
+            } catch (error) { console.error("Error analyzing text:", error); return null; }
         };
 
         const analyzeImageWithGemini = async (imageFile, userHint, apiKey) => {
-            if (!apiKey) {
-                console.error("API Key is missing.");
-                return null;
-            }
+            if (!apiKey) return null;
             try {
                 const ai = new GoogleGenAI({ apiKey });
                 const base64Data = await fileToBase64(imageFile);
+                const imagePart = { inlineData: { mimeType: imageFile.type, data: base64Data } };
                 
-                const imagePart = {
-                    inlineData: {
-                        mimeType: imageFile.type,
-                        data: base64Data,
-                    },
-                };
-                
-                let promptText = `Проанализируй это изображение блюда. Определи все ингредиенты. Для каждого ингредиента оцени его вес в граммах и предоставь КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. При оценке веса будь внимателен к относительным размерам продуктов на фото (например, банан обычно тяжелее маленького яблока). Ответ дай только в формате JSON в виде массива объектов. Каждый объект должен содержать поля: name (название на русском языке), weight (вес в граммах), и baseCPFC (объект с полями calories, protein, fat, carbohydrate, fiber на 100г).`;
-
+                let promptText = `Проанализируй это изображение блюда. Определи все ингредиенты. Для каждого ингредиента оцени его вес в граммах и предоставь КБЖУК на 100 грамм. Ответ дай только в формате JSON в виде массива объектов. Важно: название каждого ингредиента в поле 'name' должно быть на русском языке.`;
                 if (userHint && userHint.trim()) {
-                    promptText += `\n\nПользователь предоставил следующую подсказку для более точного распознавания: "${userHint.trim()}".`;
+                    promptText += `\n\nПользователь предоставил следующую подсказку: "${userHint.trim()}".`;
                 }
-
                 const textPart = { text: promptText };
-
-                const ingredientsSchema = {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            name: { type: Type.STRING },
-                            weight: { type: Type.NUMBER },
-                            baseCPFC: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    calories: { type: Type.NUMBER },
-                                    protein: { type: Type.NUMBER },
-                                    fat: { type: Type.NUMBER },
-                                    carbohydrate: { type: Type.NUMBER },
-                                    fiber: { type: Type.NUMBER }
-                                },
-                                required: ["calories", "protein", "fat", "carbohydrate", "fiber"]
-                            }
-                        },
-                        required: ["name", "weight", "baseCPFC"]
-                    }
-                };
 
                 const result = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: { parts: [imagePart, textPart] },
-                    config: {
-                        responseMimeType: "application/json",
-                        responseSchema: ingredientsSchema,
-                    }
+                    config: { responseMimeType: "application/json", responseSchema: ingredientsSchema }
                 });
-
-                const jsonString = result.text.trim();
-                return JSON.parse(jsonString);
-
-            } catch (error) {
-                console.error("Error analyzing image:", error);
-                return null;
-            }
+                return JSON.parse(result.text.trim());
+            } catch (error) { console.error("Error analyzing image:", error); return null; }
         };
 
         // --- Components ---
-        const ImageAnalyzer = ({ onAnalysisComplete, apiKey }) => {
+        const MealAnalyzer = ({ onAnalysisComplete, apiKey }) => {
+            const [text, setText] = useState('');
             const [image, setImage] = useState(null); // { file, previewUrl }
-            const [userHint, setUserHint] = useState('');
             const [isLoading, setIsLoading] = useState(false);
             const [error, setError] = useState(null);
             const fileInputRef = useRef(null);
 
-            const handleFileSelect = () => {
-                setError(null);
-                fileInputRef.current.click();
-            };
+            const handleFileSelect = () => { setError(null); fileInputRef.current.click(); };
 
             const handleImageChange = (event) => {
                 const file = event.target.files[0];
-                if (file) {
-                    setImage({
-                        file,
-                        previewUrl: URL.createObjectURL(file)
-                    });
-                }
+                if (file) { setImage({ file, previewUrl: URL.createObjectURL(file) }); }
             };
 
             const handleAnalyze = async () => {
-                if (!image) return;
-
+                if (isLoading || (!image && !text.trim())) return;
                 setIsLoading(true);
                 setError(null);
-                const result = await analyzeImageWithGemini(image.file, userHint, apiKey);
+                
+                let result;
+                if (image) {
+                    result = await analyzeImageWithGemini(image.file, text, apiKey);
+                } else {
+                    result = await analyzeTextWithGemini(text, apiKey);
+                }
+                
                 setIsLoading(false);
-
                 if (result && Array.isArray(result) && result.length > 0) {
                     onAnalysisComplete(result);
-                    handleClear();
+                    setText('');
+                    handleClearImage();
                 } else {
-                    setError("Не удалось распознать ингредиенты на фото. Попробуйте другое изображение или добавьте подсказку.");
+                    setError("Не удалось распознать. Попробуйте уточнить запрос или загрузить другое фото.");
                 }
             };
-            
-            const handleClear = () => {
-                if (image) {
-                    URL.revokeObjectURL(image.previewUrl);
-                }
+
+            const handleClearImage = () => {
+                if (image) URL.revokeObjectURL(image.previewUrl);
                 setImage(null);
-                setUserHint('');
-                setError(null);
-                if (fileInputRef.current) {
-                    fileInputRef.current.value = null;
-                }
+                if (fileInputRef.current) fileInputRef.current.value = null;
             };
 
             return (
                 <div className="bg-white p-2 sm:p-3 lg:p-4 rounded-lg shadow-md w-full">
-                    <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Анализ по фото</h2>
-                    <input
-                        type="file"
-                        accept="image/*"
-                        ref={fileInputRef}
-                        onChange={handleImageChange}
-                        className="hidden"
-                        aria-hidden="true"
-                    />
+                    <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Анализ блюда</h2>
+                     <textarea
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        placeholder="Опишите блюдо для анализа или добавьте подсказку к фото."
+                        className="w-full p-2 text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 transition resize-none mb-2"
+                        rows="3"
+                        disabled={isLoading}
+                    ></textarea>
                     
-                    {isLoading ? (
-                        <div className="text-center p-4 sm:p-6 lg:p-8 bg-slate-50 rounded-lg">
-                            <SpinnerIcon />
-                            <p className="mt-2 text-sm text-slate-600 font-semibold animate-pulse">Анализирую фото...</p>
-                        </div>
-                    ) : (
-                        <div>
-                            {image ? (
-                                <div className="space-y-2 animate-fade-in">
-                                    <img src={image.previewUrl} alt="Превью блюда" className="w-full max-h-60 object-contain rounded-md border" />
-                                    <textarea
-                                        value={userHint}
-                                        onChange={(e) => setUserHint(e.target.value)}
-                                        placeholder="Добавьте подсказку (например, 'Борщ с говядиной')"
-                                        className="w-full p-2 text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 transition resize-none"
-                                        rows="2"
-                                    ></textarea>
-                                    <div className="flex flex-col sm:flex-row gap-2">
-                                        <button onClick={handleAnalyze} className="flex-1 bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition text-sm">
-                                            Распознать
-                                        </button>
-                                        <button onClick={handleClear} className="flex-1 bg-slate-200 text-slate-800 font-bold py-2 px-4 rounded-md hover:bg-slate-300 transition text-sm">
-                                            Отмена
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={handleFileSelect}
-                                    className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-md transition border-2 border-dashed border-slate-300 text-sm"
-                                >
-                                    <PhotoIcon />
-                                    <span>Загрузить или сделать фото</span>
-                                </button>
-                            )}
-                            {error && <p className="text-red-600 bg-red-100 p-2 sm:p-3 rounded-lg text-xs sm:text-sm mt-2">{error}</p>}
+                    {image && (
+                        <div className="space-y-2 animate-fade-in mb-2">
+                            <img src={image.previewUrl} alt="Превью блюда" className="w-full max-h-40 object-contain rounded-md border" />
+                            <button onClick={handleClearImage} className="w-full bg-slate-200 text-slate-800 font-bold py-2 px-4 rounded-md hover:bg-slate-300 transition text-sm">
+                                Убрать фото
+                            </button>
                         </div>
                     )}
+
+                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} className="hidden" aria-hidden="true" />
+                    
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <button onClick={handleFileSelect} disabled={isLoading} className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-md transition border-2 border-dashed border-slate-300 disabled:bg-slate-400 text-sm">
+                            <PhotoIcon />
+                            <span>{image ? 'Изменить фото' : 'Загрузить фото'}</span>
+                        </button>
+                        <button onClick={handleAnalyze} disabled={isLoading || (!image && !text.trim())} className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition text-sm">
+                            {isLoading ? <SpinnerIcon /> : null}
+                            <span>Проанализировать</span>
+                        </button>
+                    </div>
+
+                    {error && <p className="text-red-600 bg-red-100 p-2 sm:p-3 rounded-lg text-xs sm:text-sm mt-2">{error}</p>}
                 </div>
             );
         };
-        
+
         const IngredientSearch = ({ onAddIngredient, apiKey }) => {
             const [query, setQuery] = useState('');
             const [result, setResult] = useState(null);
@@ -341,22 +297,11 @@
 
             return (
                 <div className="bg-white p-2 sm:p-3 lg:p-4 rounded-lg shadow-md w-full">
-                    <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Поиск ингредиентов</h2>
+                    <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Ручной поиск</h2>
                     <form onSubmit={handleSearch} className="w-full">
                         <div className="flex w-full">
-                            <input
-                                type="text"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Например, куриная грудка"
-                                className="flex-grow w-full min-w-0 p-2 text-base border border-r-0 border-slate-300 rounded-l-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition focus:z-10"
-                                disabled={isLoading}
-                            />
-                            <button 
-                                type="submit" 
-                                className="bg-blue-600 text-white p-2 rounded-r-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-10 sm:w-12 flex-shrink-0"
-                                disabled={isLoading || !query.trim()}
-                            >
+                            <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например, куриная грудка" className="flex-grow w-full min-w-0 p-2 text-base border border-r-0 border-slate-300 rounded-l-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition focus:z-10" disabled={isLoading} />
+                            <button type="submit" className="bg-blue-600 text-white p-2 rounded-r-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-10 sm:w-12 flex-shrink-0" disabled={isLoading || !query.trim()}>
                                 {isLoading ? <SpinnerIcon /> : <SearchIcon />}
                             </button>
                         </div>
@@ -365,38 +310,21 @@
                         {error && <p className="text-red-600 bg-red-100 p-2 sm:p-3 rounded-lg text-xs sm:text-sm">{error}</p>}
                         {result && (
                             <div className="bg-slate-50 p-2 sm:p-3 lg:p-4 rounded-lg border border-slate-200 animate-fade-in w-full">
-                                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
+                                <div className="flex justify-between items-start gap-2 mb-2">
                                     <div className="flex-1 min-w-0">
                                         <h3 className="font-bold text-sm sm:text-base lg:text-lg capitalize break-words">{result.name}</h3>
                                         <p className="text-xs sm:text-sm text-slate-500">КБЖУК на 100г:</p>
                                     </div>
                                     <button onClick={handleAdd} className="flex items-center justify-center gap-1 text-blue-600 hover:text-blue-800 font-semibold transition-colors text-xs sm:text-sm lg:text-base self-start sm:self-auto flex-shrink-0">
-                                        <PlusCircleIcon />
-                                        <span className="hidden sm:inline">Добавить</span>
-                                        <span className="sm:hidden">+</span>
+                                        <PlusCircleIcon />Добавить
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center w-full">
-                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
-                                        <p className="text-slate-500 text-xs sm:text-sm">Кал</p>
-                                        <p className="font-bold text-blue-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.calories.toFixed(0)}</p>
-                                    </div>
-                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
-                                        <p className="text-slate-500 text-xs sm:text-sm">Б</p>
-                                        <p className="font-bold text-green-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.protein.toFixed(1)}</p>
-                                    </div>
-                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
-                                        <p className="text-slate-500 text-xs sm:text-sm">Ж</p>
-                                        <p className="font-bold text-orange-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.fat.toFixed(1)}</p>
-                                    </div>
-                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
-                                        <p className="text-slate-500 text-xs sm:text-sm">У</p>
-                                        <p className="font-bold text-purple-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.carbohydrate.toFixed(1)}</p>
-                                    </div>
-                                     <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
-                                        <p className="text-slate-500 text-xs sm:text-sm">Кл</p>
-                                        <p className="font-bold text-cyan-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.fiber.toFixed(1)}</p>
-                                    </div>
+                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded"><p className="text-slate-500 text-xs">Кал</p><p className="font-bold text-blue-600 text-sm break-words">{result.cpfc.calories.toFixed(0)}</p></div>
+                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded"><p className="text-slate-500 text-xs">Б</p><p className="font-bold text-green-600 text-sm break-words">{result.cpfc.protein.toFixed(1)}</p></div>
+                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded"><p className="text-slate-500 text-xs">Ж</p><p className="font-bold text-orange-600 text-sm break-words">{result.cpfc.fat.toFixed(1)}</p></div>
+                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded"><p className="text-slate-500 text-xs">У</p><p className="font-bold text-purple-600 text-sm break-words">{result.cpfc.carbohydrate.toFixed(1)}</p></div>
+                                    <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded"><p className="text-slate-500 text-xs">Кл</p><p className="font-bold text-cyan-600 text-sm break-words">{result.cpfc.fiber.toFixed(1)}</p></div>
                                 </div>
                             </div>
                         )}
@@ -412,117 +340,148 @@
             </div>
         );
 
-        const DishBuilder = ({ ingredients, totals, onUpdateWeight, onRemove, onClear }) => {
+        const DishBuilder = ({ ingredients, totals, onUpdateWeight, onRemove, onClear, onSave }) => {
+            const [mealType, setMealType] = useState('lunch');
+
+            const handleSave = () => {
+                onSave(mealType, ingredients);
+            };
+
             return (
                 <div className="bg-white p-2 sm:p-3 lg:p-4 rounded-lg shadow-md w-full">
                     <div className="flex justify-between items-center mb-2">
-                        <h2 className="text-base sm:text-lg lg:text-xl font-bold break-words flex-1 min-w-0">Состав блюда</h2>
-                        {ingredients.length > 0 && (
-                            <button onClick={onClear} className="text-xs sm:text-sm text-red-600 hover:text-red-800 font-semibold transition-colors flex-shrink-0 ml-2">
-                                <span className="hidden sm:inline">Очистить</span>
-                                <span className="sm:hidden">✕</span>
-                            </button>
-                        )}
+                        <h2 className="text-base sm:text-lg lg:text-xl font-bold break-words flex-1 min-w-0">Текущее блюдо</h2>
+                        {ingredients.length > 0 && <button onClick={onClear} className="text-xs sm:text-sm text-red-600 hover:text-red-800 font-semibold transition-colors flex-shrink-0 ml-2">Очистить</button>}
                     </div>
                     <div className="space-y-2 mb-2 sm:mb-3 max-h-96 overflow-y-auto">
                         {ingredients.length === 0 ? (
-                            <div className="text-center py-4 sm:py-6 lg:py-8 text-slate-500 bg-slate-50 rounded-lg text-xs sm:text-sm lg:text-base w-full">
-                                <p className="break-words px-2">Добавьте ингредиенты из поиска</p>
-                            </div>
+                            <div className="text-center py-4 sm:py-6 text-slate-500 bg-slate-50 rounded-lg text-sm w-full"><p>Добавьте ингредиенты</p></div>
                         ) : (
-                            ingredients.map(item => {
-                                const ratio = item.weight / 100;
-                                return (
+                            ingredients.map(item => (
                                 <div key={item.id} className="p-2 sm:p-3 bg-slate-50 rounded-md animate-fade-in w-full">
                                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full">
                                         <div className="flex-1 min-w-0 w-full sm:w-auto">
-                                            <p className="font-semibold text-xs sm:text-sm lg:text-base capitalize break-words">{item.name}</p>
-                                            <div className="flex flex-wrap gap-1 sm:gap-2 lg:gap-3 text-xs sm:text-sm text-slate-600 mt-1">
-                                                <span>К:{(item.baseCPFC.calories * ratio).toFixed(0)}</span>
-                                                <span>Б:{(item.baseCPFC.protein * ratio).toFixed(1)}</span>
-                                                <span>Ж:{(item.baseCPFC.fat * ratio).toFixed(1)}</span>
-                                                <span>У:{(item.baseCPFC.carbohydrate * ratio).toFixed(1)}</span>
-                                                <span>Кл:{(item.baseCPFC.fiber * ratio).toFixed(1)}</span>
+                                            <p className="font-semibold text-sm capitalize break-words">{item.name}</p>
+                                            <div className="flex flex-wrap gap-2 text-xs text-slate-600 mt-1">
+                                                <span>К:{(item.baseCPFC.calories * item.weight / 100).toFixed(0)}</span>
+                                                <span>Б:{(item.baseCPFC.protein * item.weight / 100).toFixed(1)}</span>
+                                                <span>Ж:{(item.baseCPFC.fat * item.weight / 100).toFixed(1)}</span>
+                                                <span>У:{(item.baseCPFC.carbohydrate * item.weight / 100).toFixed(1)}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-                                            <input
-                                                type="number"
-                                                value={item.weight}
-                                                onChange={(e) => onUpdateWeight(item.id, parseInt(e.target.value, 10))}
-                                                className="w-16 sm:w-20 lg:w-24 p-1 sm:p-2 border border-slate-300 rounded text-center text-base"
-                                                min="0"
-                                            />
-                                            <span className="text-slate-500 text-xs sm:text-sm">г</span>
-                                            <button onClick={() => onRemove(item.id)} className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors ml-1">
-                                                <TrashIcon />
-                                            </button>
+                                            <input type="number" value={item.weight} onChange={(e) => onUpdateWeight(item.id, parseInt(e.target.value, 10))} className="w-20 p-1 sm:p-2 border border-slate-300 rounded text-center text-base" min="0" />
+                                            <span className="text-slate-500 text-sm">г</span>
+                                            <button onClick={() => onRemove(item.id)} className="text-slate-400 hover:text-red-600 p-1 rounded transition-colors ml-1"><TrashIcon /></button>
                                         </div>
                                     </div>
                                 </div>
-                            )})
+                            ))
                         )}
                     </div>
-                    <div className="border-t pt-2 sm:pt-3 w-full">
-                        <h3 className="text-sm sm:text-base lg:text-lg font-bold mb-2 break-words">Итого на блюдо:</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 lg:gap-3 w-full">
+                    {ingredients.length > 0 && <div className="border-t pt-2 sm:pt-3 w-full">
+                        <h3 className="text-lg font-bold mb-2 break-words">Итого на блюдо:</h3>
+                        <div className="grid grid-cols-5 gap-2 w-full">
                             <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
                             <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
                             <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
                             <NutritionLabel label="Углеводы" value={totals.carbohydrate} unit="г" color="bg-purple-100 text-purple-800" />
                             <NutritionLabel label="Клетчатка" value={totals.fiber} unit="г" color="bg-cyan-100 text-cyan-800" />
                         </div>
+                         <div className="mt-4">
+                            <h3 className="text-base font-bold mb-2">Сохранить как:</h3>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <select value={mealType} onChange={e => setMealType(e.target.value)} className="flex-1 p-2 border border-slate-300 rounded-md bg-white text-base">
+                                    <option value="breakfast">Завтрак</option>
+                                    <option value="lunch">Обед</option>
+                                    <option value="dinner">Ужин</option>
+                                    <option value="snack">Перекус</option>
+                                </select>
+                                <button onClick={handleSave} className="flex items-center justify-center gap-1 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition text-base">
+                                    <SaveIcon /> Сохранить
+                                </button>
+                            </div>
+                        </div>
+                    </div>}
+                </div>
+            );
+        };
+
+        const HistoryView = ({ history, onRemoveMeal, onClearDay }) => {
+            const mealLabels = { breakfast: 'Завтрак', lunch: 'Обед', dinner: 'Ужин', snack: 'Перекус' };
+            const sortedDates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
+
+            if (sortedDates.length === 0) {
+                return (
+                     <div className="bg-white p-4 sm:p-6 lg:p-8 rounded-lg shadow-md w-full text-center">
+                        <h2 className="text-lg font-semibold text-slate-700">История пуста</h2>
+                        <p className="text-slate-500 mt-2 text-sm">Сохраненные блюда появятся здесь.</p>
                     </div>
+                )
+            }
+
+            return (
+                <div className="space-y-4 w-full">
+                    {sortedDates.map(date => {
+                        const dayData = history[date];
+                        const totals = dayData.dailyTotals;
+                        return (
+                            <div key={date} className="bg-white p-3 sm:p-4 rounded-lg shadow-md animate-fade-in">
+                                <div className="flex justify-between items-center mb-3 border-b pb-3">
+                                    <h2 className="text-lg sm:text-xl font-bold">{new Date(date).toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' })}</h2>
+                                    <button onClick={() => onClearDay(date)} className="text-red-500 hover:text-red-700 text-xs font-semibold">Очистить день</button>
+                                </div>
+                                <div className="grid grid-cols-5 gap-2 mb-4">
+                                    <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
+                                    <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
+                                    <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
+                                    <NutritionLabel label="Углеводы" value={totals.carbohydrate} unit="г" color="bg-purple-100 text-purple-800" />
+                                    <NutritionLabel label="Клетчатка" value={totals.fiber} unit="г" color="bg-cyan-100 text-cyan-800" />
+                                </div>
+                                <div className="space-y-3">
+                                    {Object.entries(dayData.meals).map(([mealId, meal]) => (
+                                        <div key={mealId} className="bg-slate-50 p-2 sm:p-3 rounded-md">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <h3 className="font-bold text-base capitalize">{mealLabels[meal.type] || meal.type}</h3>
+                                                <button onClick={() => onRemoveMeal(date, mealId)} className="p-1 text-slate-400 hover:text-red-600"><TrashIcon /></button>
+                                            </div>
+                                            <ul className="text-sm space-y-1">
+                                                {meal.ingredients.map(ing => <li key={ing.id}>{ing.name} - {ing.weight}г</li>)}
+                                            </ul>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )
+                    })}
                 </div>
             );
         };
         
         const ApiKeyManager = ({ apiKey, setApiKey }) => {
             const [tempKey, setTempKey] = useState(apiKey || '');
-
-            const handleSave = () => {
-                localStorage.setItem('gemini-api-key', tempKey);
-                setApiKey(tempKey);
-            };
-            
-            const handleClear = () => {
-                localStorage.removeItem('gemini-api-key');
-                setApiKey(null);
-                setTempKey('');
-            }
+            const handleSave = () => { localStorage.setItem('gemini-api-key', tempKey); setApiKey(tempKey); };
+            const handleClear = () => { localStorage.removeItem('gemini-api-key'); setApiKey(null); setTempKey(''); }
             
             if (apiKey) {
                 return (
                     <div className="fixed bottom-2 right-2 bg-white p-2 rounded-md shadow-lg flex items-center text-xs animate-fade-in">
-                        <KeyIcon />
-                        <span>API Ключ установлен.</span>
+                        <KeyIcon /><span>API Ключ установлен.</span>
                         <button onClick={handleClear} className="ml-2 text-blue-600 hover:underline">Изменить</button>
                     </div>
                 );
             }
 
             return (
-                <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 animate-fade-in p-2 sm:p-4">
-                    <div className="bg-white p-3 sm:p-4 lg:p-6 rounded-lg shadow-2xl w-full max-w-xs sm:max-w-md lg:max-w-lg">
-                        <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Требуется API Ключ</h2>
-                        <p className="text-slate-600 mb-3 sm:mb-4 text-xs sm:text-sm lg:text-base break-words">Пожалуйста, введите ваш Google Gemini API ключ. Ключ будет сохранен в вашем браузере.</p>
-                        <div className="flex flex-col sm:flex-row gap-2 w-full">
-                           <input
-                                type="password"
-                                value={tempKey}
-                                onChange={(e) => setTempKey(e.target.value)}
-                                placeholder="Введите ваш API ключ..."
-                                className="flex-1 min-w-0 p-2 text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 w-full"
-                            />
-                            <button 
-                                onClick={handleSave}
-                                disabled={!tempKey.trim()}
-                                className="bg-blue-600 text-white font-bold py-2 px-3 sm:px-4 lg:px-6 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors text-xs sm:text-sm lg:text-base flex-shrink-0 w-full sm:w-auto"
-                            >
-                                Сохранить
-                            </button>
+                <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-2xl w-full max-w-md">
+                        <h2 className="text-xl font-bold mb-2">Требуется API Ключ</h2>
+                        <p className="text-slate-600 mb-4 text-sm">Пожалуйста, введите ваш Google Gemini API ключ. Ключ будет сохранен в вашем браузере.</p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                           <input type="password" value={tempKey} onChange={(e) => setTempKey(e.target.value)} placeholder="Введите ваш API ключ..." className="flex-1 p-2 text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 w-full" />
+                            <button onClick={handleSave} disabled={!tempKey.trim()} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition text-base">Сохранить</button>
                         </div>
-                         <p className="text-xs sm:text-sm text-slate-500 mt-2 sm:mt-3 break-words">Вы можете получить ключ в <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">Google AI Studio</a>.</p>
+                         <p className="text-xs text-slate-500 mt-3">Вы можете получить ключ в <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.</p>
                     </div>
                 </div>
             );
@@ -531,58 +490,89 @@
         const App = () => {
             const [apiKey, setApiKey] = useState(null);
             const [dishIngredients, setDishIngredients] = useState([]);
-            const [activeTab, setActiveTab] = useState('search'); // 'search' or 'dish'
+            const [history, setHistory] = useState({});
+            const [activeView, setActiveView] = useState('builder'); // 'builder' or 'history'
 
             useEffect(() => {
                 const storedKey = localStorage.getItem('gemini-api-key');
-                if (storedKey) {
-                    setApiKey(storedKey);
-                }
+                if (storedKey) setApiKey(storedKey);
+                const storedHistory = localStorage.getItem('meal-history');
+                if (storedHistory) setHistory(JSON.parse(storedHistory));
             }, []);
+            
+            useEffect(() => {
+                if (Object.keys(history).length > 0) {
+                    localStorage.setItem('meal-history', JSON.stringify(history));
+                }
+            }, [history]);
 
             const handleAddIngredient = (ingredient) => {
-                setDishIngredients(prevIngredients => {
-                    const existingIngredient = prevIngredients.find(item => item.name.toLowerCase() === ingredient.name.toLowerCase());
-                    if (existingIngredient) {
-                        return prevIngredients.map(item => 
-                            item.id === existingIngredient.id 
-                            ? { ...item, weight: item.weight + 100 } 
-                            : item
-                        );
-                    }
-                    return [...prevIngredients, { ...ingredient, weight: 100 }];
-                });
-                setActiveTab('dish'); // Switch to dish tab on mobile after adding
+                setDishIngredients(prev => [...prev, { ...ingredient, weight: 100 }]);
             };
-
-            const handleImageAnalysisComplete = (analyzedIngredients) => {
+            
+            const handleAnalysisComplete = (analyzedIngredients) => {
                 const newIngredients = analyzedIngredients.map(ing => ({
                     id: crypto.randomUUID(),
                     name: ing.name,
                     weight: Math.round(ing.weight) || 100,
                     baseCPFC: ing.baseCPFC
                 }));
-                
                 setDishIngredients(prev => [...prev, ...newIngredients]);
-                setActiveTab('dish');
             };
 
             const handleUpdateIngredientWeight = (id, weight) => {
-                setDishIngredients(prevIngredients => 
-                    prevIngredients.map(item => item.id === id ? { ...item, weight: isNaN(weight) ? 0 : weight } : item)
-                );
+                setDishIngredients(prev => prev.map(item => item.id === id ? { ...item, weight: isNaN(weight) ? 0 : weight } : item));
             };
 
-            const handleRemoveIngredient = (id) => {
-                setDishIngredients(prevIngredients => prevIngredients.filter(item => item.id !== id));
+            const handleRemoveIngredient = (id) => setDishIngredients(prev => prev.filter(item => item.id !== id));
+            const handleClearDish = () => setDishIngredients([]);
+
+            const handleSaveDish = (mealType, ingredients) => {
+                const today = new Date().toISOString().split('T')[0];
+                const mealId = crypto.randomUUID();
+
+                setHistory(prev => {
+                    const newHistory = JSON.parse(JSON.stringify(prev)); // Deep copy
+                    const dayData = newHistory[today] || { meals: {}, dailyTotals: { calories: 0, protein: 0, fat: 0, carbohydrate: 0, fiber: 0 } };
+                    
+                    dayData.meals[mealId] = { type: mealType, ingredients: ingredients };
+
+                    const allMealsToday = Object.values(dayData.meals).flatMap(m => m.ingredients);
+                    dayData.dailyTotals = calculateTotals(allMealsToday);
+
+                    newHistory[today] = dayData;
+                    return newHistory;
+                });
+                handleClearDish();
+            };
+
+            const handleRemoveMeal = (date, mealId) => {
+                 setHistory(prev => {
+                    const newHistory = JSON.parse(JSON.stringify(prev));
+                    if (!newHistory[date]) return newHistory;
+                    
+                    delete newHistory[date].meals[mealId];
+
+                    if(Object.keys(newHistory[date].meals).length === 0) {
+                        delete newHistory[date];
+                    } else {
+                        const allMealsToday = Object.values(newHistory[date].meals).flatMap(m => m.ingredients);
+                        newHistory[date].dailyTotals = calculateTotals(allMealsToday);
+                    }
+                    return newHistory;
+                 });
             };
             
-            const handleClearDish = () => {
-                setDishIngredients([]);
-            }
+            const handleClearDay = (date) => {
+                setHistory(prev => {
+                    const newHistory = { ...prev };
+                    delete newHistory[date];
+                    return newHistory;
+                });
+            };
 
-            const memoizedTotals = useMemo(() => {
-                return dishIngredients.reduce((totals, item) => {
+            const calculateTotals = (ingredientsList) => {
+                 return ingredientsList.reduce((totals, item) => {
                     const ratio = (item.weight || 0) / 100;
                     totals.calories += (item.baseCPFC.calories || 0) * ratio;
                     totals.protein += (item.baseCPFC.protein || 0) * ratio;
@@ -591,20 +581,17 @@
                     totals.fiber += (item.baseCPFC.fiber || 0) * ratio;
                     return totals;
                 }, { calories: 0, protein: 0, fat: 0, carbohydrate: 0, fiber: 0 });
-            }, [dishIngredients]);
+            };
             
+            const memoizedTotals = useMemo(() => calculateTotals(dishIngredients), [dishIngredients]);
+
             const isReady = !!apiKey;
 
-            const TabButton = ({ isActive, onClick, children }) => (
-                <button
-                    onClick={onClick}
-                    className={`flex-1 py-2 px-1 text-sm font-medium text-center transition-colors ${
-                        isActive
-                            ? 'border-b-2 border-blue-600 text-blue-600'
-                            : 'border-b-2 border-transparent text-slate-500 hover:bg-slate-100'
-                    }`}
-                >
+            const MainTabButton = ({ isActive, onClick, children, badge }) => (
+                <button onClick={onClick} className={`relative flex-1 py-3 px-1 text-sm sm:text-base font-bold text-center transition-colors ${isActive ? 'text-blue-600' : 'text-slate-500 hover:bg-slate-100'}`}>
                     {children}
+                    <span className={`absolute bottom-0 left-0 right-0 h-1 transition-transform ${isActive ? 'bg-blue-600' : 'bg-transparent'}`}></span>
+                    {badge > 0 && <span className="absolute top-1 right-2 ml-2 bg-blue-100 text-blue-800 text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{badge}</span>}
                 </button>
             );
 
@@ -613,80 +600,39 @@
                     <ApiKeyManager apiKey={apiKey} setApiKey={setApiKey} />
                     <header className="bg-white shadow-md w-full sticky top-0 z-10">
                         <div className="responsive-container py-2">
-                            <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold text-slate-900 break-words">Калькулятор КБЖУ</h1>
-                            <p className="text-slate-600 text-xs sm:text-sm hidden sm:block break-words">Создавайте блюда и рассчитывайте пищевую ценность</p>
+                            <h1 className="text-xl lg:text-2xl font-bold text-slate-900">Калькулятор КБЖУ</h1>
                         </div>
+                        {isReady && <div className="flex border-t border-slate-200">
+                            <MainTabButton isActive={activeView === 'builder'} onClick={() => setActiveView('builder')} badge={dishIngredients.length}>Конструктор</MainTabButton>
+                            <MainTabButton isActive={activeView === 'history'} onClick={() => setActiveView('history')}>История</MainTabButton>
+                        </div>}
                     </header>
                     
                     {isReady ? (
-                        <main className="w-full mt-1 animate-fade-in pb-4">
+                        <main className="w-full mt-2 sm:mt-4 animate-fade-in pb-4">
                             <div className="responsive-container">
-                                {/* Mobile Tab Navigation */}
-                                <div className="lg:hidden bg-white rounded-md shadow-md mb-2 sm:mb-3">
-                                    <div className="flex justify-around">
-                                        <TabButton isActive={activeTab === 'search'} onClick={() => setActiveTab('search')}>
-                                            Поиск
-                                        </TabButton>
-                                        <TabButton isActive={activeTab === 'dish'} onClick={() => setActiveTab('dish')}>
-                                            <div className="flex items-center justify-center">
-                                                <span>Блюдо</span>
-                                                {dishIngredients.length > 0 && (
-                                                    <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
-                                                        {dishIngredients.length}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </TabButton>
-                                    </div>
-                                </div>
-
-                                {/* Content: Desktop Grid */}
-                                <div className="hidden lg:grid lg:grid-cols-2 lg:gap-4 lg:items-start">
-                                    <div className="space-y-4">
-                                        <ImageAnalyzer onAnalysisComplete={handleImageAnalysisComplete} apiKey={apiKey} />
-                                        <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
-                                    </div>
-                                    <DishBuilder 
-                                        ingredients={dishIngredients}
-                                        totals={memoizedTotals}
-                                        onUpdateWeight={handleUpdateIngredientWeight}
-                                        onRemove={handleRemoveIngredient}
-                                        onClear={handleClearDish}
-                                    />
-                                </div>
-                                
-                                {/* Content: Mobile Tabs */}
-                                <div className="block lg:hidden space-y-2 sm:space-y-3">
-                                    {activeTab === 'search' && (
-                                        <div className="space-y-2 sm:space-y-3">
-                                            <ImageAnalyzer onAnalysisComplete={handleImageAnalysisComplete} apiKey={apiKey} />
+                                {activeView === 'builder' && (
+                                    <div className="grid lg:grid-cols-2 lg:gap-4 lg:items-start space-y-4 lg:space-y-0">
+                                        <div className="space-y-4">
+                                            <MealAnalyzer onAnalysisComplete={handleAnalysisComplete} apiKey={apiKey} />
                                             <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
                                         </div>
-                                    )}
-                                    {activeTab === 'dish' && <DishBuilder 
-                                        ingredients={dishIngredients}
-                                        totals={memoizedTotals}
-                                        onUpdateWeight={handleUpdateIngredientWeight}
-                                        onRemove={handleRemoveIngredient}
-                                        onClear={handleClearDish}
-                                    />}
-                                </div>
+                                        <DishBuilder ingredients={dishIngredients} totals={memoizedTotals} onUpdateWeight={handleUpdateIngredientWeight} onRemove={handleRemoveIngredient} onClear={handleClearDish} onSave={handleSaveDish} />
+                                    </div>
+                                )}
+                                {activeView === 'history' && <HistoryView history={history} onRemoveMeal={handleRemoveMeal} onClearDay={handleClearDay} />}
                             </div>
                         </main>
                     ) : (
                          <main className="w-full mt-2 text-center">
                             <div className="responsive-container">
-                                <div className="bg-white p-4 sm:p-6 lg:p-8 rounded-lg shadow-md w-full">
-                                    <h2 className="text-base sm:text-lg lg:text-xl font-semibold text-slate-700 break-words">Ожидание API ключа...</h2>
-                                    <p className="text-slate-500 mt-2 text-xs sm:text-sm lg:text-base break-words">Пожалуйста, введите ваш ключ, чтобы начать пользоваться калькулятором.</p>
+                                <div className="bg-white p-6 rounded-lg shadow-md w-full">
+                                    <h2 className="text-xl font-semibold text-slate-700">Ожидание API ключа...</h2>
+                                    <p className="text-slate-500 mt-2">Пожалуйста, введите ваш ключ, чтобы начать.</p>
                                 </div>
                             </div>
                         </main>
                     )}
-
-                    <footer className="text-center p-2 mt-2 sm:mt-4 text-xs text-slate-500">
-                        <p className="hidden sm:block">Сделано с ❤️ и React</p>
-                    </footer>
                 </div>
             );
         };
@@ -697,6 +643,5 @@
         root.render(<App />);
 
     </script>
-<script type="module" src="/index.tsx"></script>
 </body>
 </html>
