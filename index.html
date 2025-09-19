@@ -162,22 +162,24 @@
             return (
                 <div className="bg-white p-2 sm:p-3 lg:p-4 rounded-lg shadow-md w-full">
                     <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Поиск ингредиентов</h2>
-                    <form onSubmit={handleSearch} className="flex gap-1 sm:gap-2 w-full">
-                        <input
-                            type="text"
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Например, куриная грудка"
-                            className="flex-1 min-w-0 p-2 text-sm sm:text-base border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
-                            disabled={isLoading}
-                        />
-                        <button 
-                            type="submit" 
-                            className="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-10 sm:w-12 flex-shrink-0"
-                            disabled={isLoading || !query.trim()}
-                        >
-                            {isLoading ? <SpinnerIcon /> : <SearchIcon />}
-                        </button>
+                    <form onSubmit={handleSearch} className="w-full">
+                        <div className="flex w-full">
+                            <input
+                                type="text"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder="Например, куриная грудка"
+                                className="flex-grow w-full min-w-0 p-2 text-sm sm:text-base border border-r-0 border-slate-300 rounded-l-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition focus:z-10"
+                                disabled={isLoading}
+                            />
+                            <button 
+                                type="submit" 
+                                className="bg-blue-600 text-white p-2 rounded-r-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-10 sm:w-12 flex-shrink-0"
+                                disabled={isLoading || !query.trim()}
+                            >
+                                {isLoading ? <SpinnerIcon /> : <SearchIcon />}
+                            </button>
+                        </div>
                     </form>
                     <div className="mt-2 sm:mt-3">
                         {error && <p className="text-red-600 bg-red-100 p-2 sm:p-3 rounded-lg text-xs sm:text-sm">{error}</p>}
