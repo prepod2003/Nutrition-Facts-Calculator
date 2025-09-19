@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Калькулятор КБЖУ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Basic animation for fade-in effect */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import { GoogleGenAI, Type } from "https://aistudiocdn.com/@google/genai@^1.20.0";
+
+        const { useState, useMemo, useCallback, useEffect } = React;
+        const { createRoot } = ReactDOM;
+
+        // --- UI Icons ---
+        const SearchIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        );
+        const PlusCircleIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+        const TrashIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+        );
+        const SpinnerIcon = () => (
+            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        );
+        const KeyIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+            </svg>
+        );
+
+        // --- Gemini Service ---
+        const fetchIngredientData = async (ingredientName, apiKey) => {
+            if (!apiKey) {
+                console.error("API Key is missing.");
+                return null;
+            }
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+                const cpfcSchema = {
+                    type: Type.OBJECT,
+                    properties: {
+                        calories: { type: Type.NUMBER, description: "Количество калорий (ккал)" },
+                        protein: { type: Type.NUMBER, description: "Количество белков (г)" },
+                        fat: { type: Type.NUMBER, description: "Количество жиров (г)" },
+                        carbohydrate: { type: Type.NUMBER, description: "Количество углеводов (г)" }
+                    },
+                    required: ["calories", "protein", "fat", "carbohydrate"]
+                };
+
+                const result = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: `Для продукта '${ingredientName}' предоставь точное КБЖУ (калории, белки, жиры, углеводы) на 100 грамм. Ответ дай только в формате JSON.`,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: cpfcSchema,
+                    }
+                });
+
+                const jsonString = result.text.trim();
+                const data = JSON.parse(jsonString);
+
+                if (typeof data.calories === 'number' && typeof data.protein === 'number' && typeof data.fat === 'number' && typeof data.carbohydrate === 'number') {
+                    return data;
+                }
+
+                console.error("Parsed data does not match schema:", data);
+                return null;
+            } catch (error) {
+                console.error(`Error fetching data for ${ingredientName}:`, error);
+                return null;
+            }
+        };
+
+
+        // --- Components ---
+
+        const IngredientSearch = ({ onAddIngredient, apiKey }) => {
+            const [query, setQuery] = useState('');
+            const [result, setResult] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState(null);
+
+            const handleSearch = useCallback(async (event) => {
+                event.preventDefault();
+                if (!query.trim()) return;
+
+                setIsLoading(true);
+                setError(null);
+                setResult(null);
+
+                const data = await fetchIngredientData(query, apiKey);
+
+                if (data) {
+                    setResult({ name: query, cpfc: data });
+                } else {
+                    setError(`Не удалось найти данные для "${query}". Попробуйте другой запрос.`);
+                }
+                setIsLoading(false);
+            }, [query, apiKey]);
+
+            const handleAdd = () => {
+                if (result) {
+                    onAddIngredient({
+                        id: crypto.randomUUID(),
+                        name: result.name,
+                        baseCPFC: result.cpfc
+                    });
+                    setQuery('');
+                    setResult(null);
+                }
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-lg h-full">
+                    <h2 className="text-xl font-bold mb-4">Поиск ингредиентов</h2>
+                    <form onSubmit={handleSearch} className="flex gap-2">
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Например, куриная грудка"
+                            className="flex-grow p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                            disabled={isLoading}
+                        />
+                        <button 
+                            type="submit" 
+                            className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-14"
+                            disabled={isLoading || !query.trim()}
+                        >
+                            {isLoading ? <SpinnerIcon /> : <SearchIcon />}
+                        </button>
+                    </form>
+                    <div className="mt-6 min-h-[150px]">
+                        {error && <p className="text-red-600 bg-red-100 p-3 rounded-lg">{error}</p>}
+                        {result && (
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-fade-in">
+                                <div className="flex justify-between items-start">
+                                <div>
+                                    <h3 className="font-bold text-lg capitalize">{result.name}</h3>
+                                    <p className="text-sm text-slate-500">КБЖУ на 100г:</p>
+                                </div>
+                                <button onClick={handleAdd} className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold transition-colors">
+                                        <PlusCircleIcon />
+                                        <span>Добавить</span>
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-center">
+                                    <div className="bg-white p-2 rounded">
+                                        <p className="text-xs text-slate-500">Калории</p>
+                                        <p className="font-bold text-blue-600">{result.cpfc.calories.toFixed(1)}</p>
+                                    </div>
+                                    <div className="bg-white p-2 rounded">
+                                        <p className="text-xs text-slate-500">Белки</p>
+                                        <p className="font-bold text-green-600">{result.cpfc.protein.toFixed(1)} г</p>
+                                    </div>
+                                    <div className="bg-white p-2 rounded">
+                                        <p className="text-xs text-slate-500">Жиры</p>
+                                        <p className="font-bold text-orange-600">{result.cpfc.fat.toFixed(1)} г</p>
+                                    </div>
+                                    <div className="bg-white p-2 rounded">
+                                        <p className="text-xs text-slate-500">Углеводы</p>
+                                        <p className="font-bold text-purple-600">{result.cpfc.carbohydrate.toFixed(1)} г</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const NutritionLabel = ({label, value, unit, color}) => (
+            <div className={`p-3 rounded-lg flex-1 text-center ${color}`}>
+                <p className="text-sm font-medium opacity-80">{label}</p>
+                <p className="text-2xl font-bold">{value.toFixed(1)} <span className="text-base font-normal">{unit}</span></p>
+            </div>
+        );
+
+        const DishBuilder = ({ ingredients, totals, onUpdateWeight, onRemove, onClear }) => {
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-lg">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold">Состав блюда</h2>
+                        {ingredients.length > 0 && (
+                            <button onClick={onClear} className="text-sm text-red-600 hover:text-red-800 font-semibold transition-colors">
+                                Очистить все
+                            </button>
+                        )}
+                    </div>
+                    <div className="space-y-3 mb-6 min-h-[150px]">
+                        {ingredients.length === 0 ? (
+                            <div className="text-center py-10 text-slate-500 bg-slate-50 rounded-lg">
+                                <p>Добавьте ингредиенты из поиска,</p>
+                                <p>чтобы составить ваше блюдо.</p>
+                            </div>
+                        ) : (
+                            ingredients.map(item => {
+                                const ratio = item.weight / 100;
+                                return (
+                                <div key={item.id} className="p-3 bg-slate-50 rounded-lg flex items-center gap-4 animate-fade-in">
+                                    <div className="flex-grow">
+                                        <p className="font-semibold capitalize">{item.name}</p>
+                                        <div className="grid grid-cols-4 gap-2 text-xs text-slate-600 mt-1">
+                                            <span>К: {(item.baseCPFC.calories * ratio).toFixed(0)}</span>
+                                            <span>Б: {(item.baseCPFC.protein * ratio).toFixed(1)}</span>
+                                            <span>Ж: {(item.baseCPFC.fat * ratio).toFixed(1)}</span>
+                                            <span>У: {(item.baseCPFC.carbohydrate * ratio).toFixed(1)}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            value={item.weight}
+                                            onChange={(e) => onUpdateWeight(item.id, parseInt(e.target.value, 10))}
+                                            className="w-20 p-2 border border-slate-300 rounded-md text-center"
+                                            min="0"
+                                        />
+                                        <span className="text-slate-500">г</span>
+                                    </div>
+                                    <button onClick={() => onRemove(item.id)} className="text-slate-400 hover:text-red-600 p-2 rounded-full transition-colors">
+                                        <TrashIcon />
+                                    </button>
+                                </div>
+                            )})
+                        )}
+                    </div>
+                    <div className="border-t pt-4">
+                        <h3 className="text-lg font-bold mb-3">Итого на блюдо:</h3>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                        <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
+                        <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
+                        <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
+                        <NutritionLabel label="Углеводы" value={totals.carbohydrate} unit="г" color="bg-purple-100 text-purple-800" />
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        const ApiKeyManager = ({ apiKey, setApiKey }) => {
+            const [tempKey, setTempKey] = useState(apiKey || '');
+
+            const handleSave = () => {
+                localStorage.setItem('gemini-api-key', tempKey);
+                setApiKey(tempKey);
+            };
+            
+            const handleClear = () => {
+                localStorage.removeItem('gemini-api-key');
+                setApiKey(null);
+                setTempKey('');
+            }
+            
+            if (apiKey) {
+                return (
+                    <div className="fixed bottom-4 right-4 bg-white p-3 rounded-lg shadow-lg flex items-center text-sm animate-fade-in">
+                        <KeyIcon />
+                        <span>API Ключ установлен.</span>
+                        <button onClick={handleClear} className="ml-4 text-blue-600 hover:underline">Изменить</button>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 animate-fade-in">
+                    <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md m-4">
+                        <h2 className="text-2xl font-bold mb-2">Требуется API Ключ</h2>
+                        <p className="text-slate-600 mb-6">Пожалуйста, введите ваш Google Gemini API ключ, чтобы продолжить. Ключ будет сохранен в вашем браузере.</p>
+                        <div className="flex gap-2">
+                           <input
+                                type="password"
+                                value={tempKey}
+                                onChange={(e) => setTempKey(e.target.value)}
+                                placeholder="Введите ваш API ключ..."
+                                className="flex-grow p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button 
+                                onClick={handleSave}
+                                disabled={!tempKey.trim()}
+                                className="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 disabled:bg-slate-400 transition-colors"
+                            >
+                                Сохранить
+                            </button>
+                        </div>
+                         <p className="text-xs text-slate-500 mt-4">Вы можете получить ключ в <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.</p>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [apiKey, setApiKey] = useState(null);
+            const [dishIngredients, setDishIngredients] = useState([]);
+
+            useEffect(() => {
+                const storedKey = localStorage.getItem('gemini-api-key');
+                if (storedKey) {
+                    setApiKey(storedKey);
+                }
+            }, []);
+
+            const handleAddIngredient = (ingredient) => {
+                setDishIngredients(prevIngredients => {
+                    const existingIngredient = prevIngredients.find(item => item.name.toLowerCase() === ingredient.name.toLowerCase());
+                    if (existingIngredient) {
+                        return prevIngredients.map(item => 
+                            item.id === existingIngredient.id 
+                            ? { ...item, weight: item.weight + 100 } 
+                            : item
+                        );
+                    }
+                    return [...prevIngredients, { ...ingredient, weight: 100 }];
+                });
+            };
+
+            const handleUpdateIngredientWeight = (id, weight) => {
+                setDishIngredients(prevIngredients => 
+                    prevIngredients.map(item => item.id === id ? { ...item, weight: isNaN(weight) ? 0 : weight } : item)
+                );
+            };
+
+            const handleRemoveIngredient = (id) => {
+                setDishIngredients(prevIngredients => prevIngredients.filter(item => item.id !== id));
+            };
+            
+            const handleClearDish = () => {
+                setDishIngredients([]);
+            }
+
+            const memoizedTotals = useMemo(() => {
+                return dishIngredients.reduce((totals, item) => {
+                    const ratio = item.weight / 100;
+                    totals.calories += item.baseCPFC.calories * ratio;
+                    totals.protein += item.baseCPFC.protein * ratio;
+                    totals.fat += item.baseCPFC.fat * ratio;
+                    totals.carbohydrate += item.baseCPFC.carbohydrate * ratio;
+                    return totals;
+                }, { calories: 0, protein: 0, fat: 0, carbohydrate: 0 });
+            }, [dishIngredients]);
+            
+            const isReady = !!apiKey;
+
+            return (
+                <div className="min-h-screen bg-slate-100 text-slate-800 font-sans">
+                    <ApiKeyManager apiKey={apiKey} setApiKey={setApiKey} />
+                    <header className="bg-white shadow-md">
+                        <div className="container mx-auto px-4 py-4">
+                            <h1 className="text-3xl font-bold text-slate-900">Калькулятор КБЖУ для блюд</h1>
+                            <p className="text-slate-600 mt-1">Создавайте блюда и рассчитывайте их пищевую ценность с помощью Gemini.</p>
+                        </div>
+                    </header>
+                    
+                    {isReady ? (
+                        <main className="container mx-auto p-4 mt-6 animate-fade-in">
+                            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                                <div className="lg:col-span-2">
+                                    <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
+                                </div>
+                                <div className="lg:col-span-3">
+                                    <DishBuilder 
+                                        ingredients={dishIngredients}
+                                        totals={memoizedTotals}
+                                        onUpdateWeight={handleUpdateIngredientWeight}
+                                        onRemove={handleRemoveIngredient}
+                                        onClear={handleClearDish}
+                                    />
+                                </div>
+                            </div>
+                        </main>
+                    ) : (
+                         <main className="container mx-auto p-4 mt-6 text-center">
+                            <div className="bg-white p-10 rounded-xl shadow-lg">
+                                <h2 className="text-xl font-semibold text-slate-700">Ожидание API ключа...</h2>
+                                <p className="text-slate-500 mt-2">Пожалуйста, введите ваш ключ, чтобы начать пользоваться калькулятором.</p>
+                            </div>
+                        </main>
+                    )}
+
+                    <footer className="text-center p-4 mt-8 text-sm text-slate-500">
+                        <p>Сделано с ❤️ и React</p>
+                    </footer>
+                </div>
+            );
+        };
+
+        // --- Mount Application ---
+        const rootElement = document.getElementById('root');
+        const root = createRoot(rootElement);
+        root.render(<App />);
+
+    </script>
+</body>
+</html>
