@@ -46,7 +46,7 @@
     <script type="text/babel" data-type="module">
         import { GoogleGenAI, Type } from "https://aistudiocdn.com/@google/genai@^1.20.0";
 
-        const { useState, useMemo, useCallback, useEffect } = React;
+        const { useState, useMemo, useCallback, useEffect, useRef } = React;
         const { createRoot } = ReactDOM;
 
         // --- UI Icons ---
@@ -76,8 +76,20 @@
               <path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
             </svg>
         );
+        const PhotoIcon = () => (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+        );
 
         // --- Gemini Service ---
+        const fileToBase64 = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = error => reject(error);
+        });
+
         const fetchIngredientData = async (ingredientName, apiKey) => {
             if (!apiKey) {
                 console.error("API Key is missing.");
@@ -91,14 +103,15 @@
                         calories: { type: Type.NUMBER, description: "Количество калорий (ккал)" },
                         protein: { type: Type.NUMBER, description: "Количество белков (г)" },
                         fat: { type: Type.NUMBER, description: "Количество жиров (г)" },
-                        carbohydrate: { type: Type.NUMBER, description: "Количество углеводов (г)" }
+                        carbohydrate: { type: Type.NUMBER, description: "Количество углеводов (г)" },
+                        fiber: { type: Type.NUMBER, description: "Количество клетчатки (г)" }
                     },
-                    required: ["calories", "protein", "fat", "carbohydrate"]
+                    required: ["calories", "protein", "fat", "carbohydrate", "fiber"]
                 };
 
                 const result = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
-                    contents: `Для продукта '${ingredientName}' предоставь точное КБЖУ (калории, белки, жиры, углеводы) на 100 грамм. Ответ дай только в формате JSON.`,
+                    contents: `Для продукта '${ingredientName}' предоставь точное КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. Ответ дай только в формате JSON.`,
                     config: {
                         responseMimeType: "application/json",
                         responseSchema: cpfcSchema,
@@ -108,7 +121,7 @@
                 const jsonString = result.text.trim();
                 const data = JSON.parse(jsonString);
 
-                if (typeof data.calories === 'number' && typeof data.protein === 'number' && typeof data.fat === 'number' && typeof data.carbohydrate === 'number') {
+                if (typeof data.calories === 'number' && typeof data.protein === 'number' && typeof data.fat === 'number' && typeof data.carbohydrate === 'number' && typeof data.fiber === 'number') {
                     return data;
                 }
 
@@ -120,9 +133,164 @@
             }
         };
 
+        const analyzeImageWithGemini = async (imageFile, apiKey) => {
+            if (!apiKey) {
+                console.error("API Key is missing.");
+                return null;
+            }
+            try {
+                const ai = new GoogleGenAI({ apiKey });
+                const base64Data = await fileToBase64(imageFile);
+                
+                const imagePart = {
+                    inlineData: {
+                        mimeType: imageFile.type,
+                        data: base64Data,
+                    },
+                };
+                
+                const textPart = {
+                    text: `Проанализируй это изображение блюда. Определи все ингредиенты. Для каждого ингредиента оцени его вес в граммах и предоставь КБЖУК (калории, белки, жиры, углеводы, клетчатка) на 100 грамм. Ответ дай только в формате JSON в виде массива объектов. Каждый объект должен содержать поля: name (название на русском языке), weight (вес в граммах), и baseCPFC (объект с полями calories, protein, fat, carbohydrate, fiber на 100г).`
+                };
+
+                const ingredientsSchema = {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            weight: { type: Type.NUMBER },
+                            baseCPFC: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    calories: { type: Type.NUMBER },
+                                    protein: { type: Type.NUMBER },
+                                    fat: { type: Type.NUMBER },
+                                    carbohydrate: { type: Type.NUMBER },
+                                    fiber: { type: Type.NUMBER }
+                                },
+                                required: ["calories", "protein", "fat", "carbohydrate", "fiber"]
+                            }
+                        },
+                        required: ["name", "weight", "baseCPFC"]
+                    }
+                };
+
+                const result = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: { parts: [imagePart, textPart] },
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: ingredientsSchema,
+                    }
+                });
+
+                const jsonString = result.text.trim();
+                return JSON.parse(jsonString);
+
+            } catch (error) {
+                console.error("Error analyzing image:", error);
+                return null;
+            }
+        };
 
         // --- Components ---
+        const ImageAnalyzer = ({ onAnalysisComplete, apiKey }) => {
+            const [image, setImage] = useState(null); // { file, previewUrl }
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const fileInputRef = useRef(null);
 
+            const handleFileSelect = () => {
+                setError(null);
+                fileInputRef.current.click();
+            };
+
+            const handleImageChange = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    setImage({
+                        file,
+                        previewUrl: URL.createObjectURL(file)
+                    });
+                }
+            };
+
+            const handleAnalyze = async () => {
+                if (!image) return;
+
+                setIsLoading(true);
+                setError(null);
+                const result = await analyzeImageWithGemini(image.file, apiKey);
+                setIsLoading(false);
+
+                if (result && result.length > 0) {
+                    onAnalysisComplete(result);
+                    handleClear();
+                } else {
+                    setError("Не удалось распознать ингредиенты на фото. Попробуйте другое изображение.");
+                }
+            };
+            
+            const handleClear = () => {
+                if (image) {
+                    URL.revokeObjectURL(image.previewUrl);
+                }
+                setImage(null);
+                setError(null);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = null;
+                }
+            };
+
+            return (
+                <div className="bg-white p-2 sm:p-3 lg:p-4 rounded-lg shadow-md w-full">
+                    <h2 className="text-base sm:text-lg lg:text-xl font-bold mb-2 break-words">Анализ по фото</h2>
+                    <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        ref={fileInputRef}
+                        onChange={handleImageChange}
+                        className="hidden"
+                        aria-hidden="true"
+                    />
+                    
+                    {isLoading ? (
+                        <div className="text-center p-4 sm:p-6 lg:p-8 bg-slate-50 rounded-lg">
+                            <SpinnerIcon />
+                            <p className="mt-2 text-sm text-slate-600 font-semibold animate-pulse">Анализирую фото...</p>
+                        </div>
+                    ) : (
+                        <div>
+                            {image ? (
+                                <div className="space-y-2 animate-fade-in">
+                                    <img src={image.previewUrl} alt="Превью блюда" className="w-full max-h-60 object-contain rounded-md border" />
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <button onClick={handleAnalyze} className="flex-1 bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition text-sm">
+                                            Распознать
+                                        </button>
+                                        <button onClick={handleClear} className="flex-1 bg-slate-200 text-slate-800 font-bold py-2 px-4 rounded-md hover:bg-slate-300 transition text-sm">
+                                            Отмена
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={handleFileSelect}
+                                    className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-md transition border-2 border-dashed border-slate-300 text-sm"
+                                >
+                                    <PhotoIcon />
+                                    <span>Загрузить или сделать фото</span>
+                                </button>
+                            )}
+                            {error && <p className="text-red-600 bg-red-100 p-2 sm:p-3 rounded-lg text-xs sm:text-sm mt-2">{error}</p>}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        
         const IngredientSearch = ({ onAddIngredient, apiKey }) => {
             const [query, setQuery] = useState('');
             const [result, setResult] = useState(null);
@@ -188,7 +356,7 @@
                                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
                                     <div className="flex-1 min-w-0">
                                         <h3 className="font-bold text-sm sm:text-base lg:text-lg capitalize break-words">{result.name}</h3>
-                                        <p className="text-xs sm:text-sm text-slate-500">КБЖУ на 100г:</p>
+                                        <p className="text-xs sm:text-sm text-slate-500">КБЖУК на 100г:</p>
                                     </div>
                                     <button onClick={handleAdd} className="flex items-center justify-center gap-1 text-blue-600 hover:text-blue-800 font-semibold transition-colors text-xs sm:text-sm lg:text-base self-start sm:self-auto flex-shrink-0">
                                         <PlusCircleIcon />
@@ -196,7 +364,7 @@
                                         <span className="sm:hidden">+</span>
                                     </button>
                                 </div>
-                                <div className="grid grid-cols-4 gap-1 sm:gap-2 text-center w-full">
+                                <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center w-full">
                                     <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
                                         <p className="text-slate-500 text-xs sm:text-sm">Кал</p>
                                         <p className="font-bold text-blue-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.calories.toFixed(0)}</p>
@@ -212,6 +380,10 @@
                                     <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
                                         <p className="text-slate-500 text-xs sm:text-sm">У</p>
                                         <p className="font-bold text-purple-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.carbohydrate.toFixed(1)}</p>
+                                    </div>
+                                     <div className="bg-white p-1 sm:p-1.5 lg:p-2 rounded text-xs sm:text-sm flex-1">
+                                        <p className="text-slate-500 text-xs sm:text-sm">Кл</p>
+                                        <p className="font-bold text-cyan-600 text-xs sm:text-sm lg:text-base break-words">{result.cpfc.fiber.toFixed(1)}</p>
                                     </div>
                                 </div>
                             </div>
@@ -258,6 +430,7 @@
                                                 <span>Б:{(item.baseCPFC.protein * ratio).toFixed(1)}</span>
                                                 <span>Ж:{(item.baseCPFC.fat * ratio).toFixed(1)}</span>
                                                 <span>У:{(item.baseCPFC.carbohydrate * ratio).toFixed(1)}</span>
+                                                <span>Кл:{(item.baseCPFC.fiber * ratio).toFixed(1)}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
@@ -280,11 +453,12 @@
                     </div>
                     <div className="border-t pt-2 sm:pt-3 w-full">
                         <h3 className="text-sm sm:text-base lg:text-lg font-bold mb-2 break-words">Итого на блюдо:</h3>
-                        <div className="grid grid-cols-2 gap-1 sm:gap-2 lg:gap-3 w-full">
-                        <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
-                        <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
-                        <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
-                        <NutritionLabel label="Углеводы" value={totals.carbohydrate} unit="г" color="bg-purple-100 text-purple-800" />
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 sm:gap-2 lg:gap-3 w-full">
+                            <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
+                            <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
+                            <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
+                            <NutritionLabel label="Углеводы" value={totals.carbohydrate} unit="г" color="bg-purple-100 text-purple-800" />
+                            <NutritionLabel label="Клетчатка" value={totals.fiber} unit="г" color="bg-cyan-100 text-cyan-800" />
                         </div>
                     </div>
                 </div>
@@ -369,6 +543,18 @@
                 setActiveTab('dish'); // Switch to dish tab on mobile after adding
             };
 
+            const handleImageAnalysisComplete = (analyzedIngredients) => {
+                const newIngredients = analyzedIngredients.map(ing => ({
+                    id: crypto.randomUUID(),
+                    name: ing.name,
+                    weight: Math.round(ing.weight) || 100,
+                    baseCPFC: ing.baseCPFC
+                }));
+                
+                setDishIngredients(prev => [...prev, ...newIngredients]);
+                setActiveTab('dish');
+            };
+
             const handleUpdateIngredientWeight = (id, weight) => {
                 setDishIngredients(prevIngredients => 
                     prevIngredients.map(item => item.id === id ? { ...item, weight: isNaN(weight) ? 0 : weight } : item)
@@ -385,13 +571,14 @@
 
             const memoizedTotals = useMemo(() => {
                 return dishIngredients.reduce((totals, item) => {
-                    const ratio = item.weight / 100;
-                    totals.calories += item.baseCPFC.calories * ratio;
-                    totals.protein += item.baseCPFC.protein * ratio;
-                    totals.fat += item.baseCPFC.fat * ratio;
-                    totals.carbohydrate += item.baseCPFC.carbohydrate * ratio;
+                    const ratio = (item.weight || 0) / 100;
+                    totals.calories += (item.baseCPFC.calories || 0) * ratio;
+                    totals.protein += (item.baseCPFC.protein || 0) * ratio;
+                    totals.fat += (item.baseCPFC.fat || 0) * ratio;
+                    totals.carbohydrate += (item.baseCPFC.carbohydrate || 0) * ratio;
+                    totals.fiber += (item.baseCPFC.fiber || 0) * ratio;
                     return totals;
-                }, { calories: 0, protein: 0, fat: 0, carbohydrate: 0 });
+                }, { calories: 0, protein: 0, fat: 0, carbohydrate: 0, fiber: 0 });
             }, [dishIngredients]);
             
             const isReady = !!apiKey;
@@ -443,7 +630,10 @@
 
                                 {/* Content: Desktop Grid */}
                                 <div className="hidden lg:grid lg:grid-cols-2 lg:gap-4 lg:items-start">
-                                    <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
+                                    <div className="space-y-4">
+                                        <ImageAnalyzer onAnalysisComplete={handleImageAnalysisComplete} apiKey={apiKey} />
+                                        <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
+                                    </div>
                                     <DishBuilder 
                                         ingredients={dishIngredients}
                                         totals={memoizedTotals}
@@ -454,8 +644,13 @@
                                 </div>
                                 
                                 {/* Content: Mobile Tabs */}
-                                <div className="block lg:hidden">
-                                    {activeTab === 'search' && <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />}
+                                <div className="block lg:hidden space-y-2 sm:space-y-3">
+                                    {activeTab === 'search' && (
+                                        <div className="space-y-2 sm:space-y-3">
+                                            <ImageAnalyzer onAnalysisComplete={handleImageAnalysisComplete} apiKey={apiKey} />
+                                            <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
+                                        </div>
+                                    )}
                                     {activeTab === 'dish' && <DishBuilder 
                                         ingredients={dishIngredients}
                                         totals={memoizedTotals}
