@@ -204,12 +204,11 @@ ${weightInstruction}
         };
 
         // --- Components ---
-        const MealAnalyzer = ({ onAnalysisComplete, apiKey }) => {
+        const MealAnalyzer = ({ onAnalysisComplete, apiKey, calculatePer100g, onCalculatePer100gChange }) => {
             const [text, setText] = useState('');
             const [image, setImage] = useState(null); // { file, previewUrl }
             const [isLoading, setIsLoading] = useState(false);
             const [error, setError] = useState(null);
-            const [calculatePer100g, setCalculatePer100g] = useState(false);
             const fileInputRef = useRef(null);
 
             const handleFileSelect = () => { setError(null); fileInputRef.current.click(); };
@@ -264,7 +263,7 @@ ${weightInstruction}
                             type="checkbox"
                             id="calculatePer100g"
                             checked={calculatePer100g}
-                            onChange={(e) => setCalculatePer100g(e.target.checked)}
+                            onChange={(e) => onCalculatePer100gChange(e.target.checked)}
                             className="h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
                             disabled={isLoading}
                         />
@@ -550,6 +549,8 @@ ${weightInstruction}
             const [dishIngredients, setDishIngredients] = useState([]);
             const [history, setHistory] = useState({});
             const [activeView, setActiveView] = useState('builder'); // 'builder' or 'history'
+            const [calculatePer100g, setCalculatePer100g] = useState(false);
+
 
             useEffect(() => {
                 const storedKey = localStorage.getItem('gemini-api-key');
@@ -581,6 +582,14 @@ ${weightInstruction}
                     baseCPFC: ing.baseCPFC
                 }));
                 setDishIngredients(prev => [...prev, ...newIngredients]);
+                setCalculatePer100g(false); // Reset checkbox after analysis
+            };
+            
+            const handleCalculatePer100gChange = (isChecked) => {
+                setCalculatePer100g(isChecked);
+                if (isChecked && dishIngredients.length > 0) {
+                    setDishIngredients(prev => prev.map(item => ({ ...item, weight: 100 })));
+                }
             };
 
             const handleUpdateIngredientWeight = (id, weight) => {
@@ -678,7 +687,12 @@ ${weightInstruction}
                                 {activeView === 'builder' && (
                                     <div className="grid lg:grid-cols-2 lg:gap-4 lg:items-start space-y-4 lg:space-y-0">
                                         <div className="space-y-4">
-                                            <MealAnalyzer onAnalysisComplete={handleAnalysisComplete} apiKey={apiKey} />
+                                            <MealAnalyzer 
+                                                onAnalysisComplete={handleAnalysisComplete} 
+                                                apiKey={apiKey} 
+                                                calculatePer100g={calculatePer100g}
+                                                onCalculatePer100gChange={handleCalculatePer100gChange}
+                                            />
                                             <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
                                         </div>
                                         <DishBuilder ingredients={dishIngredients} totals={memoizedTotals} onUpdateWeight={handleUpdateIngredientWeight} onRemove={handleRemoveIngredient} onClear={handleClearDish} onSave={handleSaveDish} />
