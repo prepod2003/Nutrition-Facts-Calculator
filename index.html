@@ -135,55 +135,56 @@
             };
 
             return (
-                <div className="bg-white p-3 rounded-lg shadow-md">
-                    <h2 className="text-lg font-bold mb-2">Поиск ингредиентов</h2>
+                <div className="bg-white p-2 sm:p-3 rounded-lg shadow-md">
+                    <h2 className="text-base sm:text-lg font-bold mb-2">Поиск ингредиентов</h2>
                     <form onSubmit={handleSearch} className="flex gap-2">
                         <input
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Например, куриная грудка"
-                            className="flex-grow p-2 text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                            className="flex-grow p-2 text-xs sm:text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
                             disabled={isLoading}
                         />
                         <button 
                             type="submit" 
-                            className="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-10"
+                            className="bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors flex items-center justify-center w-8 sm:w-10"
                             disabled={isLoading || !query.trim()}
                         >
                             {isLoading ? <SpinnerIcon /> : <SearchIcon />}
                         </button>
                     </form>
-                    <div className="mt-3">
-                        {error && <p className="text-red-600 bg-red-100 p-3 rounded-lg">{error}</p>}
+                    <div className="mt-2 sm:mt-3">
+                        {error && <p className="text-red-600 bg-red-100 p-2 sm:p-3 rounded-lg text-xs sm:text-sm">{error}</p>}
                         {result && (
-                            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 animate-fade-in">
+                            <div className="bg-slate-50 p-2 sm:p-3 rounded-lg border border-slate-200 animate-fade-in">
                                 <div className="flex justify-between items-start mb-2">
                                     <div>
-                                        <h3 className="font-bold text-base capitalize">{result.name}</h3>
+                                        <h3 className="font-bold text-sm sm:text-base capitalize">{result.name}</h3>
                                         <p className="text-xs text-slate-500">КБЖУ на 100г:</p>
                                     </div>
-                                    <button onClick={handleAdd} className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold transition-colors text-sm">
+                                    <button onClick={handleAdd} className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold transition-colors text-xs sm:text-sm">
                                         <PlusCircleIcon />
-                                        <span>Добавить</span>
+                                        <span className="hidden sm:inline">Добавить</span>
+                                        <span className="sm:hidden">+</span>
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-4 gap-1 text-center">
-                                    <div className="bg-white p-1.5 rounded text-xs">
+                                    <div className="bg-white p-1 sm:p-1.5 rounded text-xs">
                                         <p className="text-slate-500">Кал</p>
-                                        <p className="font-bold text-blue-600">{result.cpfc.calories.toFixed(0)}</p>
+                                        <p className="font-bold text-blue-600 text-xs sm:text-sm">{result.cpfc.calories.toFixed(0)}</p>
                                     </div>
-                                    <div className="bg-white p-1.5 rounded text-xs">
+                                    <div className="bg-white p-1 sm:p-1.5 rounded text-xs">
                                         <p className="text-slate-500">Б</p>
-                                        <p className="font-bold text-green-600">{result.cpfc.protein.toFixed(1)}</p>
+                                        <p className="font-bold text-green-600 text-xs sm:text-sm">{result.cpfc.protein.toFixed(1)}</p>
                                     </div>
-                                    <div className="bg-white p-1.5 rounded text-xs">
+                                    <div className="bg-white p-1 sm:p-1.5 rounded text-xs">
                                         <p className="text-slate-500">Ж</p>
-                                        <p className="font-bold text-orange-600">{result.cpfc.fat.toFixed(1)}</p>
+                                        <p className="font-bold text-orange-600 text-xs sm:text-sm">{result.cpfc.fat.toFixed(1)}</p>
                                     </div>
-                                    <div className="bg-white p-1.5 rounded text-xs">
+                                    <div className="bg-white p-1 sm:p-1.5 rounded text-xs">
                                         <p className="text-slate-500">У</p>
-                                        <p className="font-bold text-purple-600">{result.cpfc.carbohydrate.toFixed(1)}</p>
+                                        <p className="font-bold text-purple-600 text-xs sm:text-sm">{result.cpfc.carbohydrate.toFixed(1)}</p>
                                     </div>
                                 </div>
                             </div>
@@ -194,36 +195,37 @@
         };
 
         const NutritionLabel = ({label, value, unit, color}) => (
-            <div className={`p-2 rounded-md flex-1 text-center ${color}`}>
+            <div className={`p-1.5 sm:p-2 rounded-md flex-1 text-center ${color}`}>
                 <p className="text-xs font-medium opacity-80">{label}</p>
-                <p className="text-lg font-bold">{value.toFixed(1)} <span className="text-xs font-normal">{unit}</span></p>
+                <p className="text-sm sm:text-lg font-bold">{value.toFixed(1)} <span className="text-xs font-normal">{unit}</span></p>
             </div>
         );
 
         const DishBuilder = ({ ingredients, totals, onUpdateWeight, onRemove, onClear }) => {
             return (
-                <div className="bg-white p-3 rounded-lg shadow-md">
+                <div className="bg-white p-2 sm:p-3 rounded-lg shadow-md">
                     <div className="flex justify-between items-center mb-2">
-                        <h2 className="text-lg font-bold">Состав блюда</h2>
+                        <h2 className="text-base sm:text-lg font-bold">Состав блюда</h2>
                         {ingredients.length > 0 && (
                             <button onClick={onClear} className="text-xs text-red-600 hover:text-red-800 font-semibold transition-colors">
-                                Очистить
+                                <span className="hidden sm:inline">Очистить</span>
+                                <span className="sm:hidden">✕</span>
                             </button>
                         )}
                     </div>
-                    <div className="space-y-2 mb-3">
+                    <div className="space-y-2 mb-2 sm:mb-3">
                         {ingredients.length === 0 ? (
-                            <div className="text-center py-6 text-slate-500 bg-slate-50 rounded-lg text-sm">
+                            <div className="text-center py-4 sm:py-6 text-slate-500 bg-slate-50 rounded-lg text-xs sm:text-sm">
                                 <p>Добавьте ингредиенты из поиска</p>
                             </div>
                         ) : (
                             ingredients.map(item => {
                                 const ratio = item.weight / 100;
                                 return (
-                                <div key={item.id} className="p-2 bg-slate-50 rounded-md flex items-center gap-2 animate-fade-in">
+                                <div key={item.id} className="p-2 bg-slate-50 rounded-md flex items-center gap-1 sm:gap-2 animate-fade-in">
                                     <div className="flex-grow min-w-0">
-                                        <p className="font-semibold text-sm capitalize truncate">{item.name}</p>
-                                        <div className="flex gap-3 text-xs text-slate-600 mt-1">
+                                        <p className="font-semibold text-xs sm:text-sm capitalize truncate">{item.name}</p>
+                                        <div className="flex gap-2 sm:gap-3 text-xs text-slate-600 mt-1">
                                             <span>К:{(item.baseCPFC.calories * ratio).toFixed(0)}</span>
                                             <span>Б:{(item.baseCPFC.protein * ratio).toFixed(1)}</span>
                                             <span>Ж:{(item.baseCPFC.fat * ratio).toFixed(1)}</span>
@@ -235,7 +237,7 @@
                                             type="number"
                                             value={item.weight}
                                             onChange={(e) => onUpdateWeight(item.id, parseInt(e.target.value, 10))}
-                                            className="w-16 p-1 border border-slate-300 rounded text-center text-sm"
+                                            className="w-12 sm:w-16 p-1 border border-slate-300 rounded text-center text-xs sm:text-sm"
                                             min="0"
                                         />
                                         <span className="text-slate-500 text-xs">г</span>
@@ -248,8 +250,8 @@
                         )}
                     </div>
                     <div className="border-t pt-2">
-                        <h3 className="text-base font-bold mb-2">Итого на блюдо:</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <h3 className="text-sm sm:text-base font-bold mb-2">Итого на блюдо:</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-2">
                         <NutritionLabel label="Калории" value={totals.calories} unit="ккал" color="bg-blue-100 text-blue-800" />
                         <NutritionLabel label="Белки" value={totals.protein} unit="г" color="bg-green-100 text-green-800" />
                         <NutritionLabel label="Жиры" value={totals.fat} unit="г" color="bg-orange-100 text-orange-800" />
@@ -286,26 +288,26 @@
 
             return (
                 <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 animate-fade-in p-2">
-                    <div className="bg-white p-4 rounded-lg shadow-2xl w-full max-w-md">
-                        <h2 className="text-lg font-bold mb-2">Требуется API Ключ</h2>
-                        <p className="text-slate-600 mb-4 text-sm">Пожалуйста, введите ваш Google Gemini API ключ. Ключ будет сохранен в вашем браузере.</p>
-                        <div className="flex gap-2">
+                    <div className="bg-white p-3 sm:p-4 rounded-lg shadow-2xl w-full max-w-md">
+                        <h2 className="text-base sm:text-lg font-bold mb-2">Требуется API Ключ</h2>
+                        <p className="text-slate-600 mb-3 sm:mb-4 text-xs sm:text-sm">Пожалуйста, введите ваш Google Gemini API ключ. Ключ будет сохранен в вашем браузере.</p>
+                        <div className="flex flex-col sm:flex-row gap-2">
                            <input
                                 type="password"
                                 value={tempKey}
                                 onChange={(e) => setTempKey(e.target.value)}
                                 placeholder="Введите ваш API ключ..."
-                                className="flex-grow p-2 text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500"
+                                className="flex-grow p-2 text-xs sm:text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500"
                             />
                             <button 
                                 onClick={handleSave}
                                 disabled={!tempKey.trim()}
-                                className="bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors text-sm"
+                                className="bg-blue-600 text-white font-bold py-2 px-3 sm:px-4 rounded-md hover:bg-blue-700 disabled:bg-slate-400 transition-colors text-xs sm:text-sm"
                             >
                                 Сохранить
                             </button>
                         </div>
-                         <p className="text-xs text-slate-500 mt-3">Вы можете получить ключ в <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.</p>
+                         <p className="text-xs text-slate-500 mt-2 sm:mt-3">Вы можете получить ключ в <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.</p>
                     </div>
                 </div>
             );
@@ -367,15 +369,15 @@
                 <div className="min-h-screen bg-slate-100 text-slate-800 font-sans">
                     <ApiKeyManager apiKey={apiKey} setApiKey={setApiKey} />
                     <header className="bg-white shadow-md">
-                        <div className="container mx-auto px-3 py-3">
-                            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Калькулятор КБЖУ</h1>
-                            <p className="text-slate-600 text-sm">Создавайте блюда и рассчитывайте пищевую ценность</p>
+                        <div className="container mx-auto px-3 py-2">
+                            <h1 className="text-lg sm:text-2xl font-bold text-slate-900">Калькулятор КБЖУ</h1>
+                            <p className="text-slate-600 text-xs sm:text-sm hidden sm:block">Создавайте блюда и рассчитывайте пищевую ценность</p>
                         </div>
                     </header>
                     
                     {isReady ? (
-                        <main className="container mx-auto p-2 sm:p-4 mt-2 animate-fade-in">
-                            <div className="space-y-3">
+                        <main className="container mx-auto p-2 sm:p-4 mt-1 animate-fade-in">
+                            <div className="space-y-2 sm:space-y-3">
                                 <IngredientSearch onAddIngredient={handleAddIngredient} apiKey={apiKey} />
                                 <DishBuilder 
                                     ingredients={dishIngredients}
@@ -387,16 +389,16 @@
                             </div>
                         </main>
                     ) : (
-                         <main className="container mx-auto p-4 mt-2 text-center">
-                            <div className="bg-white p-6 rounded-lg shadow-md">
-                                <h2 className="text-lg font-semibold text-slate-700">Ожидание API ключа...</h2>
-                                <p className="text-slate-500 mt-2 text-sm">Пожалуйста, введите ваш ключ, чтобы начать пользоваться калькулятором.</p>
+                         <main className="container mx-auto p-2 sm:p-4 mt-2 text-center">
+                            <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+                                <h2 className="text-base sm:text-lg font-semibold text-slate-700">Ожидание API ключа...</h2>
+                                <p className="text-slate-500 mt-2 text-xs sm:text-sm">Пожалуйста, введите ваш ключ, чтобы начать пользоваться калькулятором.</p>
                             </div>
                         </main>
                     )}
 
-                    <footer className="text-center p-2 mt-4 text-xs text-slate-500">
-                        <p>Сделано с ❤️ и React</p>
+                    <footer className="text-center p-2 mt-2 sm:mt-4 text-xs text-slate-500">
+                        <p className="hidden sm:block">Сделано с ❤️ и React</p>
                     </footer>
                 </div>
             );
