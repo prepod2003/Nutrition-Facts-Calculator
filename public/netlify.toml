@@ -1,0 +1,5 @@
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  conditions = {not = {path = ["/*.css", "/*.js", "/*.svg", "/*.ico"]}}
